@@ -1,4 +1,4 @@
-# Snorlax Mode – Deployment Guide
+# Claude Remote – Deployment Guide
 
 ## Prerequisites
 
@@ -15,12 +15,12 @@
 ```bash
 # 1. Clone the project
 git clone <repository-url>
-cd claude_snorlax
+cd claude_claude-remote
 
 # 2. Install dependencies
 npm install
 
-# 3. Start Snorlax Mode
+# 3. Start Claude Remote
 npm start
 ```
 
@@ -32,7 +32,7 @@ The server will:
 
 ## Global Installation
 
-Install globally to use `snorlax` as a CLI command from any directory:
+Install globally to use `claude-remote` as a CLI command from any directory:
 
 ```bash
 # From the project directory
@@ -40,13 +40,13 @@ npm install -g .
 
 # Now you can run from any project directory
 cd /path/to/your/project
-snorlax
+claude-remote
 ```
 
 Or install directly from a registry (when published):
 
 ```bash
-npm install -g snorlax-mode
+npm install -g claude-remote
 ```
 
 ## Configuration
@@ -55,47 +55,47 @@ All configuration is via environment variables. Set them before running:
 
 ```bash
 # Custom port
-SNORLAX_PORT=8080 snorlax
+CLAUDE_REMOTE_PORT=8080 claude-remote
 
 # Custom ntfy.sh topic (for your own push notifications)
-SNORLAX_NTFY_TOPIC=my-private-alerts snorlax
+CLAUDE_REMOTE_NTFY_TOPIC=my-private-alerts claude-remote
 
 # Disable localtunnel (local network only)
-SNORLAX_NO_TUNNEL=1 snorlax
+CLAUDE_REMOTE_NO_TUNNEL=1 claude-remote
 
 # Custom claude command path
-SNORLAX_CLAUDE_CMD=/usr/local/bin/claude snorlax
+CLAUDE_REMOTE_CMD=/usr/local/bin/claude claude-remote
 
 # Larger scrollback buffer
-SNORLAX_SCROLLBACK=100000 snorlax
+CLAUDE_REMOTE_SCROLLBACK=100000 claude-remote
 
 # Combine multiple options
-SNORLAX_PORT=4000 SNORLAX_NTFY_TOPIC=team-alerts snorlax
+CLAUDE_REMOTE_PORT=4000 CLAUDE_REMOTE_NTFY_TOPIC=team-alerts claude-remote
 ```
 
 On Windows (PowerShell):
 ```powershell
-$env:SNORLAX_PORT = "8080"
-$env:SNORLAX_NTFY_TOPIC = "my-alerts"
+$env:CLAUDE_REMOTE_PORT = "8080"
+$env:CLAUDE_REMOTE_NTFY_TOPIC = "my-alerts"
 node server.js
 ```
 
 ## Push Notifications Setup
 
-Snorlax sends push notifications via [ntfy.sh](https://ntfy.sh) when Claude needs input.
+Claude Remote sends push notifications via [ntfy.sh](https://ntfy.sh) when Claude needs input.
 
 1. Install the **ntfy** app on your phone ([Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy) / [iOS](https://apps.apple.com/app/ntfy/id1625396347))
-2. Subscribe to your topic (default: `my-snorlax-alerts`)
+2. Subscribe to your topic (default: `my-claude-remote-alerts`)
 3. Set a custom topic for privacy:
    ```bash
-   SNORLAX_NTFY_TOPIC=my-secret-topic-abc123 snorlax
+   CLAUDE_REMOTE_NTFY_TOPIC=my-secret-topic-abc123 claude-remote
    ```
 
 ## Network Access
 
 ### localtunnel (Default)
 
-By default, Snorlax uses localtunnel to expose your local server to the internet. The URL is printed in the terminal and displayed as a QR code.
+By default, Claude Remote uses localtunnel to expose your local server to the internet. The URL is printed in the terminal and displayed as a QR code.
 
 **Note:** localtunnel URLs are public. Anyone with the URL can access your terminal. Use a custom ntfy topic and don't share the URL.
 
@@ -104,7 +104,7 @@ By default, Snorlax uses localtunnel to expose your local server to the internet
 If you're on the same WiFi as your phone:
 
 ```bash
-SNORLAX_NO_TUNNEL=1 snorlax
+CLAUDE_REMOTE_NO_TUNNEL=1 claude-remote
 ```
 
 Then access `http://<your-laptop-ip>:3000` from your phone.
@@ -118,7 +118,7 @@ Find your local IP:
 If localtunnel is unreliable, use ngrok instead:
 
 ```bash
-SNORLAX_NO_TUNNEL=1 snorlax &
+CLAUDE_REMOTE_NO_TUNNEL=1 claude-remote &
 ngrok http 3000
 ```
 
@@ -177,7 +177,7 @@ npm install
 
 localtunnel can be flaky. Options:
 1. Retry: `npm start` (it will get a new URL)
-2. Use local network: `SNORLAX_NO_TUNNEL=1 snorlax`
+2. Use local network: `CLAUDE_REMOTE_NO_TUNNEL=1 claude-remote`
 3. Use ngrok as an alternative
 
 ### Mobile UI doesn't load
@@ -196,7 +196,7 @@ localtunnel can be flaky. Options:
 
 1. Verify ntfy app is installed and subscribed to the correct topic
 2. Check server logs for `[ntfy] Alert sent to <topic>` messages
-3. Test manually: `curl -d "test" ntfy.sh/my-snorlax-alerts`
+3. Test manually: `curl -d "test" ntfy.sh/my-claude-remote-alerts`
 4. Ensure your phone has internet access
 
 ## Architecture Overview

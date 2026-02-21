@@ -1,4 +1,4 @@
-# Snorlax Mode
+# Claude Remote
 
 Remote control Claude Code from your phone. Start a task on your laptop, walk away, and monitor progress from anywhere.
 
@@ -39,8 +39,8 @@ Phone (Browser)                    Laptop (Node.js)
 ## Quick Start
 
 ```bash
-git clone https://github.com/wilsoncheng/snorlax-mode.git
-cd snorlax-mode
+git clone https://github.com/wilsoncheng/claude-remote.git
+cd claude-remote
 npm install
 npm start
 ```
@@ -54,7 +54,7 @@ npm install -g .
 
 # Then run from any project directory:
 cd /path/to/your/project
-snorlax
+claude-remote
 ```
 
 ## Configuration
@@ -63,32 +63,32 @@ All configuration is via environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `SNORLAX_PORT` | `3000` | HTTP server port |
-| `SNORLAX_NTFY_TOPIC` | `my-snorlax-alerts` | ntfy.sh topic for push notifications |
-| `SNORLAX_NO_TUNNEL` | `0` | Set to `1` to disable tunnel (local network only) |
-| `SNORLAX_SCROLLBACK` | `50000` | Max scrollback buffer size in characters |
-| `SNORLAX_CLAUDE_CMD` | `claude` / `claude.cmd` | Override the claude CLI command |
+| `CLAUDE_REMOTE_PORT` | `3000` | HTTP server port |
+| `CLAUDE_REMOTE_NTFY_TOPIC` | `my-claude-remote-alerts` | ntfy.sh topic for push notifications |
+| `CLAUDE_REMOTE_NO_TUNNEL` | `0` | Set to `1` to disable tunnel (local network only) |
+| `CLAUDE_REMOTE_SCROLLBACK` | `50000` | Max scrollback buffer size in characters |
+| `CLAUDE_REMOTE_CMD` | `claude` / `claude.cmd` | Override the claude CLI command |
 
 ```bash
 # Example: custom port + notifications topic
-SNORLAX_PORT=4000 SNORLAX_NTFY_TOPIC=my-alerts snorlax
+CLAUDE_REMOTE_PORT=4000 CLAUDE_REMOTE_NTFY_TOPIC=my-alerts claude-remote
 ```
 
 ## Push Notifications
 
 1. Install the [ntfy app](https://ntfy.sh) on your phone
-2. Subscribe to your topic (default: `my-snorlax-alerts`)
-3. Set a unique topic for privacy: `SNORLAX_NTFY_TOPIC=my-secret-topic-abc123 snorlax`
+2. Subscribe to your topic (default: `my-claude-remote-alerts`)
+3. Set a unique topic for privacy: `CLAUDE_REMOTE_NTFY_TOPIC=my-secret-topic-abc123 claude-remote`
 
 Notifications fire when Claude is waiting for input or finishes generating. A 1.5s debounce prevents false positives during streaming.
 
 ## Network Access
 
-**Cloudflare Tunnel** (preferred, no password page): Install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), and Snorlax will use it automatically.
+**Cloudflare Tunnel** (preferred, no password page): Install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), and Claude Remote will use it automatically.
 
 **localtunnel** (fallback): Used when cloudflared is not available. May show a password page -- enter your public IP.
 
-**Local network only**: `SNORLAX_NO_TUNNEL=1 snorlax`, then open `http://<laptop-ip>:3000` from your phone.
+**Local network only**: `CLAUDE_REMOTE_NO_TUNNEL=1 claude-remote`, then open `http://<laptop-ip>:3000` from your phone.
 
 ## Tests
 

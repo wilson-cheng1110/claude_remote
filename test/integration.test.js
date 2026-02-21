@@ -314,7 +314,7 @@ describe('Integration: HTTP endpoints', () => {
       let body = '';
       res.on('data', (chunk) => (body += chunk));
       res.on('end', () => {
-        expect(body).toContain('Snorlax Mode');
+        expect(body).toContain('Claude Remote');
         done();
       });
     });

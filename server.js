@@ -18,13 +18,13 @@ const { Notifier } = require('./lib/notifier');
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
-const PREFERRED_PORT = parseInt(process.env.SNORLAX_PORT || process.env.PORT || '3000', 10);
-const NTFY_TOPIC = process.env.SNORLAX_NTFY_TOPIC || 'my-snorlax-alerts';
-const SCROLLBACK_LIMIT = parseInt(process.env.SNORLAX_SCROLLBACK || '50000', 10);
-const DISABLE_TUNNEL = process.env.SNORLAX_NO_TUNNEL === '1';
-const CLAUDE_CMD = process.env.SNORLAX_CLAUDE_CMD ||
+const PREFERRED_PORT = parseInt(process.env.CLAUDE_REMOTE_PORT || process.env.PORT || '3000', 10);
+const NTFY_TOPIC = process.env.CLAUDE_REMOTE_NTFY_TOPIC || 'my-claude-remote-alerts';
+const SCROLLBACK_LIMIT = parseInt(process.env.CLAUDE_REMOTE_SCROLLBACK || '50000', 10);
+const DISABLE_TUNNEL = process.env.CLAUDE_REMOTE_NO_TUNNEL === '1';
+const CLAUDE_CMD = process.env.CLAUDE_REMOTE_CMD ||
   (os.platform() === 'win32' ? 'claude.cmd' : 'claude');
-const AUTH_TOKEN = process.env.SNORLAX_TOKEN || crypto.randomBytes(16).toString('hex');
+const AUTH_TOKEN = process.env.CLAUDE_REMOTE_TOKEN || crypto.randomBytes(16).toString('hex');
 // Cost data is parsed from Claude's status line output — no auto-polling needed
 
 // ---------------------------------------------------------------------------
@@ -121,10 +121,10 @@ function spawnPty() {
       cwd: process.cwd(),
       env: ptyEnv,
     });
-    console.log(`[snorlax] PTY spawned (pid=${ptyProcess.pid}) running: ${CLAUDE_CMD}`);
+    console.log(`[claude-remote] PTY spawned (pid=${ptyProcess.pid}) running: ${CLAUDE_CMD}`);
   } catch (err) {
-    console.error(`[snorlax] Failed to spawn PTY: ${err.message}`);
-    console.error('[snorlax] Make sure "claude" CLI is installed and on your PATH.');
+    console.error(`[claude-remote] Failed to spawn PTY: ${err.message}`);
+    console.error('[claude-remote] Make sure "claude" CLI is installed and on your PATH.');
     process.exit(1);
   }
 
@@ -164,13 +164,13 @@ function spawnPty() {
 
   // Auto-restart claude when it exits
   ptyProcess.onExit(({ exitCode, signal }) => {
-    console.log(`[snorlax] PTY exited (code=${exitCode}, signal=${signal})`);
+    console.log(`[claude-remote] PTY exited (code=${exitCode}, signal=${signal})`);
     io.emit('pty-exit', { exitCode, signal });
 
     if (shuttingDown) return;
 
     // Clear scrollback and restart after a short delay
-    console.log('[snorlax] Auto-restarting claude in 2 seconds...');
+    console.log('[claude-remote] Auto-restarting claude in 2 seconds...');
     scrollbackBuffer = '';
     accumulator.reset();
     setTimeout(() => {
@@ -189,7 +189,7 @@ spawnPty();
 // Socket.IO connection handling
 // ---------------------------------------------------------------------------
 io.on('connection', (socket) => {
-  console.log(`[snorlax] Client connected (id=${socket.id})`);
+  console.log(`[claude-remote] Client connected (id=${socket.id})`);
 
   // Send scrollback buffer so the client sees recent history
   if (scrollbackBuffer.length > 0) {
@@ -232,7 +232,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log(`[snorlax] Client disconnected (id=${socket.id})`);
+    console.log(`[claude-remote] Client disconnected (id=${socket.id})`);
   });
 });
 
@@ -299,15 +299,15 @@ async function startTunnel(port) {
   // Try cloudflared first (no password page, more reliable)
   const cfBin = findCloudflared();
   if (cfBin) {
-    console.log(`[snorlax] Found cloudflared at: ${cfBin}`);
-    console.log('[snorlax] Starting Cloudflare Tunnel (no password page)...');
+    console.log(`[claude-remote] Found cloudflared at: ${cfBin}`);
+    console.log('[claude-remote] Starting Cloudflare Tunnel (no password page)...');
     try {
       return await startCloudflaredTunnel(port);
     } catch (err) {
-      console.log(`[snorlax] cloudflared failed: ${err.message}, falling back to localtunnel...`);
+      console.log(`[claude-remote] cloudflared failed: ${err.message}, falling back to localtunnel...`);
     }
   } else {
-    console.log('[snorlax] cloudflared not found, using localtunnel (may show password page)');
+    console.log('[claude-remote] cloudflared not found, using localtunnel (may show password page)');
   }
 
   // Fallback to localtunnel
@@ -321,7 +321,7 @@ async function startServer(port) {
   const actualPort = await new Promise((resolve, reject) => {
     server.once('error', (err) => {
       if (err.code === 'EADDRINUSE') {
-        console.log(`[snorlax] Port ${port} in use, finding an available port...`);
+        console.log(`[claude-remote] Port ${port} in use, finding an available port...`);
         server.listen(0, () => resolve(server.address().port));
       } else {
         reject(err);
@@ -330,14 +330,14 @@ async function startServer(port) {
     server.listen(port, () => resolve(port));
   });
 
-  console.log(`[snorlax] Server listening on http://localhost:${actualPort}`);
-  console.log(`[snorlax] Auth token: ${AUTH_TOKEN}`);
-  console.log(`[snorlax] Telemetry: CLAUDE_CODE_ENABLE_TELEMETRY=1`);
-  console.log(`[snorlax] Notifications: ntfy.sh/${NTFY_TOPIC}`);
+  console.log(`[claude-remote] Server listening on http://localhost:${actualPort}`);
+  console.log(`[claude-remote] Auth token: ${AUTH_TOKEN}`);
+  console.log(`[claude-remote] Telemetry: CLAUDE_CODE_ENABLE_TELEMETRY=1`);
+  console.log(`[claude-remote] Notifications: ntfy.sh/${NTFY_TOPIC}`);
 
   if (DISABLE_TUNNEL) {
     const localUrl = `http://localhost:${actualPort}?token=${AUTH_TOKEN}`;
-    console.log(`[snorlax] Tunnel disabled. Local URL: ${localUrl}`);
+    console.log(`[claude-remote] Tunnel disabled. Local URL: ${localUrl}`);
     qrcode.generate(localUrl, { small: true }, (qr) => { console.log(qr); });
     return;
   }
@@ -350,7 +350,7 @@ async function startServer(port) {
     fs.writeFileSync(path.join(__dirname, '.tunnel-url'), tunnelUrl, 'utf-8');
 
     console.log('\n\x1b[36m=========================================\x1b[0m');
-    console.log(`\x1b[33m  SNORLAX MODE ACTIVE\x1b[0m`);
+    console.log(`\x1b[33m  CLAUDE REMOTE ACTIVE\x1b[0m`);
     console.log(`\x1b[36m=========================================\x1b[0m`);
     console.log(`\x1b[90m  Tunnel: ${tunnelResult.type}\x1b[0m`);
     console.log(`\x1b[32m  URL: ${tunnelUrl}\x1b[0m`);
@@ -371,13 +371,13 @@ async function startServer(port) {
         console.log(`\x1b[33m  If localtunnel asks for a password, enter: ${ip}\x1b[0m\n`);
       } catch {}
 
-      tunnelResult.tunnel.on('close', () => console.log('[snorlax] Tunnel closed'));
-      tunnelResult.tunnel.on('error', (err) => console.error('[snorlax] Tunnel error:', err.message));
+      tunnelResult.tunnel.on('close', () => console.log('[claude-remote] Tunnel closed'));
+      tunnelResult.tunnel.on('error', (err) => console.error('[claude-remote] Tunnel error:', err.message));
     }
   } catch (err) {
-    console.error('[snorlax] Failed to create tunnel:', err.message);
+    console.error('[claude-remote] Failed to create tunnel:', err.message);
     const localUrl = `http://localhost:${actualPort}?token=${AUTH_TOKEN}`;
-    console.log(`[snorlax] Access locally: ${localUrl}`);
+    console.log(`[claude-remote] Access locally: ${localUrl}`);
   }
 }
 
@@ -387,7 +387,7 @@ startServer(PREFERRED_PORT);
 // Graceful shutdown
 // ---------------------------------------------------------------------------
 function shutdown(signal) {
-  console.log(`\n[snorlax] Received ${signal}, shutting down...`);
+  console.log(`\n[claude-remote] Received ${signal}, shutting down...`);
   shuttingDown = true;
   notifier.destroy();
   if (ptyProcess && !ptyProcess.killed) {
@@ -398,12 +398,12 @@ function shutdown(signal) {
   try { fs.unlinkSync(path.join(__dirname, '.tunnel-url')); } catch {}
 
   server.close(() => {
-    console.log('[snorlax] Server closed.');
+    console.log('[claude-remote] Server closed.');
     process.exit(0);
   });
 
   setTimeout(() => {
-    console.log('[snorlax] Forcing exit.');
+    console.log('[claude-remote] Forcing exit.');
     process.exit(1);
   }, 5000);
 }

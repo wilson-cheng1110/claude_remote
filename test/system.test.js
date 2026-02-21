@@ -18,12 +18,12 @@ describe('System: Package structure', () => {
   });
 
   test('package.json has correct name', () => {
-    expect(pkg.name).toBe('snorlax-mode');
+    expect(pkg.name).toBe('claude-remote');
   });
 
-  test('package.json has bin entry for snorlax', () => {
-    expect(pkg.bin).toHaveProperty('snorlax');
-    expect(pkg.bin.snorlax).toBe('./server.js');
+  test('package.json has bin entry for claude-remote', () => {
+    expect(pkg.bin).toHaveProperty('claude-remote');
+    expect(pkg.bin['claude-remote']).toBe('./server.js');
   });
 
   test('package.json has all required dependencies', () => {
@@ -221,24 +221,24 @@ describe('System: server.js content', () => {
 });
 
 describe('System: Environment variable configuration', () => {
-  test('SNORLAX_PORT is respected', () => {
+  test('CLAUDE_REMOTE_PORT is respected', () => {
     // Verify the config code exists in server.js
     const content = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf-8');
-    expect(content).toContain('SNORLAX_PORT');
+    expect(content).toContain('CLAUDE_REMOTE_PORT');
   });
 
-  test('SNORLAX_NTFY_TOPIC is configurable', () => {
+  test('CLAUDE_REMOTE_NTFY_TOPIC is configurable', () => {
     const content = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf-8');
-    expect(content).toContain('SNORLAX_NTFY_TOPIC');
+    expect(content).toContain('CLAUDE_REMOTE_NTFY_TOPIC');
   });
 
-  test('SNORLAX_NO_TUNNEL is configurable', () => {
+  test('CLAUDE_REMOTE_NO_TUNNEL is configurable', () => {
     const content = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf-8');
-    expect(content).toContain('SNORLAX_NO_TUNNEL');
+    expect(content).toContain('CLAUDE_REMOTE_NO_TUNNEL');
   });
 
-  test('SNORLAX_CLAUDE_CMD is configurable', () => {
+  test('CLAUDE_REMOTE_CMD is configurable', () => {
     const content = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf-8');
-    expect(content).toContain('SNORLAX_CLAUDE_CMD');
+    expect(content).toContain('CLAUDE_REMOTE_CMD');
   });
 });

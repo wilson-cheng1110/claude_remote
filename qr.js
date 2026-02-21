@@ -8,7 +8,7 @@ const qrcode = require('qrcode-terminal');
 const urlFile = path.join(__dirname, '.tunnel-url');
 
 if (!fs.existsSync(urlFile)) {
-  console.error('[snorlax] No tunnel URL found. Is the server running? (npm start)');
+  console.error('[claude-remote] No tunnel URL found. Is the server running? (npm start)');
   process.exit(1);
 }
 

@@ -1,10 +1,10 @@
 {
-  "name": "snorlax-mode",
+  "name": "claude-remote",
   "version": "1.0.0",
   "description": "Universal remote control wrapper for Claude Code - control from your phone, monitor costs, get push notifications.",
   "main": "server.js",
   "bin": {
-    "snorlax": "./server.js"
+    "claude-remote": "./server.js"
   },
   "scripts": {
     "start": "node server.js",
@@ -41,6 +41,6 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/wilsoncheng/snorlax-mode"
+    "url": "https://github.com/wilson-cheng1110/claude_remote"
   }
 }

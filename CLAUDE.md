@@ -1,8 +1,8 @@
-# Snorlax Mode – Project Guide
+# Claude Remote – Project Guide
 
 ## What This Is
 
-Snorlax Mode is a two-part remote control wrapper (Node.js Host + Mobile Web Client) that lets you trigger Claude Code from your phone, walk away while it executes tasks on your laptop, and monitor token costs / system status remotely.
+Claude Remote is a two-part remote control wrapper (Node.js Host + Mobile Web Client) that lets you trigger Claude Code from your phone, walk away while it executes tasks on your laptop, and monitor token costs / system status remotely.
 
 ## Architecture
 
@@ -62,11 +62,11 @@ npm run test:coverage     # Tests with coverage report
 
 | Variable | Default | Description |
 |---|---|---|
-| `SNORLAX_PORT` | `3000` | HTTP server port |
-| `SNORLAX_NTFY_TOPIC` | `my-snorlax-alerts` | ntfy.sh topic for push notifications |
-| `SNORLAX_NO_TUNNEL` | `0` | Set to `1` to disable localtunnel |
-| `SNORLAX_SCROLLBACK` | `50000` | Max scrollback buffer size in characters |
-| `SNORLAX_CLAUDE_CMD` | `claude` / `claude.cmd` | Override the claude CLI command |
+| `CLAUDE_REMOTE_PORT` | `3000` | HTTP server port |
+| `CLAUDE_REMOTE_NTFY_TOPIC` | `my-claude-remote-alerts` | ntfy.sh topic for push notifications |
+| `CLAUDE_REMOTE_NO_TUNNEL` | `0` | Set to `1` to disable localtunnel |
+| `CLAUDE_REMOTE_SCROLLBACK` | `50000` | Max scrollback buffer size in characters |
+| `CLAUDE_REMOTE_CMD` | `claude` / `claude.cmd` | Override the claude CLI command |
 
 ## Conventions
 
