@@ -19,13 +19,26 @@ const { Notifier } = require('./lib/notifier');
 // Configuration
 // ---------------------------------------------------------------------------
 const PREFERRED_PORT = parseInt(process.env.CLAUDE_REMOTE_PORT || process.env.PORT || '3000', 10);
-const NTFY_TOPIC = process.env.CLAUDE_REMOTE_NTFY_TOPIC || 'my-claude-remote-alerts';
 const SCROLLBACK_LIMIT = parseInt(process.env.CLAUDE_REMOTE_SCROLLBACK || '50000', 10);
 const DISABLE_TUNNEL = process.env.CLAUDE_REMOTE_NO_TUNNEL === '1';
 const CLAUDE_CMD = process.env.CLAUDE_REMOTE_CMD ||
   (os.platform() === 'win32' ? 'claude.cmd' : 'claude');
 const AUTH_TOKEN = process.env.CLAUDE_REMOTE_TOKEN || crypto.randomBytes(16).toString('hex');
-// Cost data is parsed from Claude's status line output — no auto-polling needed
+const READONLY = process.argv.includes('--readonly');
+
+// ntfy topic: env var > persisted file > generate new random one
+function resolveNtfyTopic() {
+  if (process.env.CLAUDE_REMOTE_NTFY_TOPIC) return process.env.CLAUDE_REMOTE_NTFY_TOPIC;
+  const topicFile = path.join(__dirname, '.ntfy-topic');
+  try {
+    const saved = fs.readFileSync(topicFile, 'utf-8').trim();
+    if (saved) return saved;
+  } catch {}
+  const generated = 'cr-' + crypto.randomBytes(8).toString('hex');
+  fs.writeFileSync(topicFile, generated, 'utf-8');
+  return generated;
+}
+const NTFY_TOPIC = resolveNtfyTopic();
 
 // ---------------------------------------------------------------------------
 // Express + Socket.IO setup
@@ -202,8 +215,12 @@ io.on('connection', (socket) => {
     socket.emit('status-update', lastCost);
   }
 
-  // Pipe user input from socket to pty
+  // Pipe user input from socket to pty (blocked in readonly mode)
   socket.on('input', (data) => {
+    if (READONLY) {
+      socket.emit('output', '\r\n\x1b[31m--- Read-only mode: input disabled ---\x1b[0m\r\n');
+      return;
+    }
     lastUserInputTime = Date.now();
     waitingForInput = false;
     notifier.cancelPending();
@@ -334,6 +351,7 @@ async function startServer(port) {
   console.log(`[claude-remote] Auth token: ${AUTH_TOKEN}`);
   console.log(`[claude-remote] Telemetry: CLAUDE_CODE_ENABLE_TELEMETRY=1`);
   console.log(`[claude-remote] Notifications: ntfy.sh/${NTFY_TOPIC}`);
+  if (READONLY) console.log(`[claude-remote] READ-ONLY mode — input disabled`);
 
   if (DISABLE_TUNNEL) {
     const localUrl = `http://localhost:${actualPort}?token=${AUTH_TOKEN}`;
@@ -394,7 +412,7 @@ function shutdown(signal) {
     ptyProcess.kill();
   }
 
-  // Clean up tunnel URL file
+  // Clean up runtime files (keep .ntfy-topic for persistence)
   try { fs.unlinkSync(path.join(__dirname, '.tunnel-url')); } catch {}
 
   server.close(() => {

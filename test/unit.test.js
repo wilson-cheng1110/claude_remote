@@ -221,9 +221,10 @@ describe('OutputAccumulator', () => {
 // Notifier – Construction & Configuration
 // =============================================================================
 describe('Notifier', () => {
-  test('uses default topic when none provided', () => {
+  test('disables itself when no topic provided', () => {
     const n = new Notifier({ fetchFn: jest.fn() });
-    expect(n.topic).toBe(DEFAULT_TOPIC);
+    expect(n.topic).toBeNull();
+    expect(n._enabled).toBe(false);
   });
 
   test('uses custom topic from options', () => {
