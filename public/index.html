@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0d0d0d">
+  <title>Snorlax Mode</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- xterm.js -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      overscroll-behavior-y: none;
+      -webkit-overflow-scrolling: none;
+      touch-action: manipulation;
+    }
+    .xterm-viewport { overflow-y: auto !important; }
+    .btn-quick { transition: transform 0.1s; }
+    .btn-quick:active { transform: scale(0.93); }
+    @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .pulse-dot { animation: pulse-dot 2s infinite; }
+  </style>
+</head>
+
+<body class="bg-[#0d0d0d] text-white w-screen flex flex-col overflow-hidden font-sans" style="height:100dvh">
+
+  <!-- ===== STATUS BAR (1 line) ===== -->
+  <div id="status-bar" class="flex items-center gap-3 px-3 py-1 bg-black/80 border-b border-gray-800/50 flex-shrink-0 text-[0.65rem] font-mono tracking-wide">
+    <!-- Connection dot -->
+    <div class="flex items-center gap-1">
+      <div id="conn-dot" class="w-1.5 h-1.5 rounded-full bg-red-500 pulse-dot"></div>
+      <span id="conn-text" class="text-gray-500 uppercase">Offline</span>
+    </div>
+    <span class="text-gray-700">|</span>
+    <!-- Cost -->
+    <span class="text-gray-500">$<span id="val-cost" class="text-amber-400">--</span></span>
+    <span class="text-gray-700">|</span>
+    <!-- Tokens (in/out) -->
+    <span class="text-gray-500"><span id="val-tokens-in" class="text-blue-400">--</span>/<span id="val-tokens-out" class="text-cyan-400">--</span></span>
+    <span class="text-gray-700">|</span>
+    <!-- Context -->
+    <span class="text-gray-500">Ctx <span id="val-context" class="text-purple-400">--</span></span>
+  </div>
+
+  <!-- ===== TERMINAL (fills all available space) ===== -->
+  <div id="terminal-container" class="flex-1 min-h-0 w-full bg-[#0d0d0d]"></div>
+
+  <!-- ===== CONTROL PANEL ===== -->
+  <div id="control-panel" class="flex-shrink-0 w-full bg-gray-900 border-t border-gray-800 p-2 gap-1.5 flex flex-col pb-[env(safe-area-inset-bottom,8px)]">
+    <!-- Row 1: TUI navigation keys -->
+    <div class="grid grid-cols-5 gap-1.5">
+      <button id="btn-up"
+        class="btn-quick bg-gray-700 hover:bg-gray-600 text-white rounded-lg py-2.5 font-bold shadow-md text-sm border border-gray-600">
+        ↑
+      </button>
+      <button id="btn-down"
+        class="btn-quick bg-gray-700 hover:bg-gray-600 text-white rounded-lg py-2.5 font-bold shadow-md text-sm border border-gray-600">
+        ↓
+      </button>
+      <button id="btn-tab"
+        class="btn-quick bg-blue-700 hover:bg-blue-600 text-white rounded-lg py-2.5 font-bold shadow-md text-sm">
+        Tab
+      </button>
+      <button id="btn-enter"
+        class="btn-quick bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-2.5 font-bold shadow-md text-sm">
+        Enter
+      </button>
+      <button id="btn-esc"
+        class="btn-quick bg-rose-700 hover:bg-rose-600 text-white rounded-lg py-2.5 font-bold shadow-md text-sm">
+        Esc
+      </button>
+    </div>
+    <!-- Row 2: Text input for prompts -->
+    <form id="cmd-form" class="flex gap-1.5">
+      <input type="text" id="cmd-input" autocomplete="off" enterkeyhint="send"
+        class="flex-1 bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors shadow-inner"
+        placeholder="Type a prompt...">
+    </form>
+  </div>
+
+  <!-- ===== SCRIPTS ===== -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+  <script>
+    // ── Extract token from URL ──
+    const urlParams = new URLSearchParams(window.location.search);
+    const authToken = urlParams.get('token') || '';
+
+    // ── Socket.IO with auth token ──
+    const socket = io({
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: Infinity,
+      auth: { token: authToken },
+      query: { token: authToken },
+    });
+
+    // ── xterm.js ──
+    const term = new Terminal({
+      cursorBlink: true,
+      theme: { background: '#0d0d0d', foreground: '#f0f0f0', cursor: '#ffffff' },
+      fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", monospace',
+      fontSize: 13,
+      lineHeight: 1.15,
+      scrollback: 5000,
+      rendererType: 'canvas',
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById('terminal-container'));
+
+    // ── Fit terminal ──
+    function fitTerminal() {
+      try {
+        fitAddon.fit();
+        socket.emit('resize', { cols: term.cols, rows: term.rows });
+      } catch (e) {}
+    }
+
+    let resizeTimer;
+    const resizeObserver = new ResizeObserver(() => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(fitTerminal, 150);
+    });
+    resizeObserver.observe(document.getElementById('terminal-container'));
+    setTimeout(fitTerminal, 200);
+
+    // ── Terminal I/O ──
+    term.onData(data => socket.emit('input', data));
+
+    socket.on('output', data => {
+      term.write(data);
+      parseStatusFromOutput(data);
+    });
+
+    // ── Connection status ──
+    const connDot = document.getElementById('conn-dot');
+    const connText = document.getElementById('conn-text');
+
+    socket.on('connect', () => {
+      connDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot';
+      connText.textContent = 'Live';
+      connText.className = 'text-emerald-400 uppercase';
+      term.write('\r\n\x1b[32m--- Connected ---\x1b[0m\r\n');
+    });
+
+    socket.on('disconnect', () => {
+      connDot.className = 'w-1.5 h-1.5 rounded-full bg-red-500 pulse-dot';
+      connText.textContent = 'Offline';
+      connText.className = 'text-red-400 uppercase';
+      term.write('\r\n\x1b[31m--- Disconnected ---\x1b[0m\r\n');
+    });
+
+    socket.on('connect_error', (err) => {
+      if (err.message === 'Authentication failed') {
+        term.write('\r\n\x1b[31m--- Auth failed. Rescan QR code. ---\x1b[0m\r\n');
+      }
+    });
+
+    socket.on('pty-exit', ({ exitCode }) => {
+      term.write(`\r\n\x1b[33m--- Claude exited (code=${exitCode}) ---\x1b[0m\r\n`);
+    });
+
+    // ── Status bar updates ──
+    socket.on('status-update', data => updateStatusBar(data));
+
+    function updateStatusBar(data) {
+      if (data.sessionCost || data.totalCost) {
+        document.getElementById('val-cost').textContent = (data.sessionCost || data.totalCost);
+      }
+      if (data.inputTokens) {
+        document.getElementById('val-tokens-in').textContent = data.inputTokens;
+      }
+      if (data.outputTokens) {
+        document.getElementById('val-tokens-out').textContent = data.outputTokens;
+      }
+      // Fallback: if only totalTokens is available, show it in the "in" slot
+      if (data.totalTokens && !data.inputTokens) {
+        document.getElementById('val-tokens-in').textContent = data.totalTokens;
+        document.getElementById('val-tokens-out').textContent = '';
+      }
+      if (data.contextUsed || data.contextWindow) {
+        document.getElementById('val-context').textContent = data.contextUsed || data.contextWindow;
+      }
+    }
+
+    // Client-side parsing — throttled to avoid perf hit on rapid output
+    const ANSI_RE = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><~]/g;
+    let parseBuffer = '';
+    let parseTimer = null;
+
+    function parseStatusFromOutput(raw) {
+      parseBuffer += raw;
+      if (parseTimer) return;
+      parseTimer = setTimeout(() => {
+        const clean = parseBuffer.replace(ANSI_RE, '');
+        parseBuffer = '';
+        parseTimer = null;
+        // Only bother parsing if it looks like cost/status output
+        if (!/cost|token|context|used/i.test(clean)) return;
+        const data = {};
+        let found = false;
+        let m;
+        if ((m = clean.match(/Session cost:\s*\$?([\d,.]+)/i))) { data.sessionCost = m[1]; found = true; }
+        if ((m = clean.match(/Total cost:\s*\$?([\d,.]+)/i))) { data.totalCost = m[1]; found = true; }
+        if ((m = clean.match(/Total tokens?:\s*([\d,]+)/i))) { data.totalTokens = m[1]; found = true; }
+        if ((m = clean.match(/Input tokens?:\s*([\d,]+k?)/i))) { data.inputTokens = m[1]; found = true; }
+        if ((m = clean.match(/Output tokens?:\s*([\d,]+k?)/i))) { data.outputTokens = m[1]; found = true; }
+        if ((m = clean.match(/used\s+([\d.]+)%/i))) { data.contextUsed = m[1] + '%'; found = true; }
+        if ((m = clean.match(/([\d.]+)%\s*(?:of context|used)/i))) { data.contextUsed = m[1] + '%'; found = true; }
+        if (found) updateStatusBar(data);
+      }, 500);
+    }
+
+    // ── TUI key helpers ──
+    function sendKey(seq) {
+      socket.emit('input', seq);
+    }
+
+    // Ctrl+U clears Claude's multi-line editor, then type + Enter submits
+    function sendCmd(cmd) {
+      socket.emit('input', '\x15');
+      setTimeout(() => { socket.emit('input', cmd + '\r'); }, 80);
+    }
+
+    // ── Button bindings (mobile-friendly: touchstart + click with dedup) ──
+    function bindBtn(id, fn) {
+      const el = document.getElementById(id);
+      let handled = false;
+      el.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (handled) return;
+        handled = true;
+        setTimeout(() => { handled = false; }, 200);
+        fn();
+      });
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (handled) return;
+        handled = true;
+        setTimeout(() => { handled = false; }, 200);
+        fn();
+      });
+    }
+
+    // TUI navigation buttons
+    bindBtn('btn-up',    () => sendKey('\x1b[A'));   // Arrow Up
+    bindBtn('btn-down',  () => sendKey('\x1b[B'));   // Arrow Down
+    bindBtn('btn-tab',   () => sendKey('\t'));        // Tab
+    bindBtn('btn-enter', () => sendKey('\r'));        // Enter
+    bindBtn('btn-esc',   () => sendKey('\x1b'));      // Escape
+
+    // ── Text input for prompts ──
+    const form = document.getElementById('cmd-form');
+    const input = document.getElementById('cmd-input');
+
+    function doSend() {
+      const val = input.value.trim();
+      if (val) {
+        sendCmd(val);
+        input.value = '';
+      }
+    }
+
+    form.addEventListener('submit', (e) => { e.preventDefault(); doSend(); });
+
+    // Explicit Enter key handler — backup for mobile browsers that
+    // don't fire form submit on enterkeyhint="send"
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.keyCode === 13) {
+        e.preventDefault();
+        doSend();
+      }
+    });
+
+    // ── Keyboard-aware viewport resize ──
+    // When the mobile keyboard opens, visualViewport shrinks but the
+    // CSS 100dvh may not update on all browsers. We pin body height to
+    // the visual viewport so the flex layout always fits above the keyboard.
+    const controlPanel = document.getElementById('control-panel');
+
+    function onViewportResize() {
+      if (window.visualViewport) {
+        const vp = window.visualViewport;
+        // Set body height to the actual visible area
+        document.body.style.height = vp.height + 'px';
+        // On iOS Safari the viewport can scroll behind the keyboard;
+        // pin it back to offset 0 so our fixed-flex layout stays put.
+        window.scrollTo(0, 0);
+        // Re-fit terminal to the new available space
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(fitTerminal, 100);
+      }
+    }
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', onViewportResize);
+      window.visualViewport.addEventListener('scroll', () => window.scrollTo(0, 0));
+      // Set initial height
+      onViewportResize();
+    }
+
+    // When the input is focused, ensure the control panel scrolls into view
+    // after a short delay (keyboard animation).
+    input.addEventListener('focus', () => {
+      setTimeout(() => {
+        controlPanel.scrollIntoView({ block: 'end', behavior: 'smooth' });
+        onViewportResize();
+      }, 300);
+    });
+  </script>
+</body>
+
+</html>

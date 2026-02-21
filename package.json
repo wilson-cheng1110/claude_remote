@@ -1,0 +1,46 @@
+{
+  "name": "snorlax-mode",
+  "version": "1.0.0",
+  "description": "Universal remote control wrapper for Claude Code - control from your phone, monitor costs, get push notifications.",
+  "main": "server.js",
+  "bin": {
+    "snorlax": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "qr": "node qr.js",
+    "test": "jest --verbose",
+    "test:unit": "jest test/unit.test.js --verbose",
+    "test:integration": "jest test/integration.test.js --verbose",
+    "test:system": "jest test/system.test.js --verbose",
+    "test:coverage": "jest --coverage --verbose"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "localtunnel": "^2.0.2",
+    "node-pty": "^1.1.0",
+    "qrcode-terminal": "^0.12.0",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "socket.io-client": "^4.8.3"
+  },
+  "author": "Wilson Cheng",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "remote-control",
+    "terminal",
+    "mobile",
+    "developer-tools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wilsoncheng/snorlax-mode"
+  }
+}
