@@ -49,6 +49,11 @@
     <span class="text-gray-700">|</span>
     <!-- Context -->
     <span class="text-gray-500">Ctx <span id="val-context" class="text-purple-400">--</span></span>
+    <span class="text-gray-700">|</span>
+    <!-- Notification bell toggle -->
+    <button id="notify-toggle" title="Toggle browser notifications" class="text-gray-500 hover:text-yellow-400 transition-colors">
+      <span id="notify-icon">&#128276;</span>
+    </button>
   </div>
 
   <!-- ===== TERMINAL (fills all available space) ===== -->
@@ -56,28 +61,9 @@
 
   <!-- ===== CONTROL PANEL ===== -->
   <div id="control-panel" class="flex-shrink-0 w-full bg-gray-900 border-t border-gray-800 p-2 gap-1.5 flex flex-col pb-[env(safe-area-inset-bottom,8px)]">
-    <!-- Row 1: TUI navigation keys -->
-    <div class="grid grid-cols-5 gap-1.5">
-      <button id="btn-up"
-        class="btn-quick bg-gray-700 hover:bg-gray-600 text-white rounded-lg py-2.5 font-bold shadow-md text-sm border border-gray-600">
-        ↑
-      </button>
-      <button id="btn-down"
-        class="btn-quick bg-gray-700 hover:bg-gray-600 text-white rounded-lg py-2.5 font-bold shadow-md text-sm border border-gray-600">
-        ↓
-      </button>
-      <button id="btn-tab"
-        class="btn-quick bg-blue-700 hover:bg-blue-600 text-white rounded-lg py-2.5 font-bold shadow-md text-sm">
-        Tab
-      </button>
-      <button id="btn-enter"
-        class="btn-quick bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-2.5 font-bold shadow-md text-sm">
-        Enter
-      </button>
-      <button id="btn-esc"
-        class="btn-quick bg-rose-700 hover:bg-rose-600 text-white rounded-lg py-2.5 font-bold shadow-md text-sm">
-        Esc
-      </button>
+    <!-- Row 1: Dynamic shortcut buttons (loaded from /api/shortcuts) -->
+    <div id="shortcuts-grid" class="grid grid-cols-5 gap-1.5">
+      <!-- Populated dynamically -->
     </div>
     <!-- Row 2: Text input for prompts -->
     <form id="cmd-form" class="flex gap-1.5">
@@ -236,8 +222,7 @@
     }
 
     // ── Button bindings (mobile-friendly: touchstart + click with dedup) ──
-    function bindBtn(id, fn) {
-      const el = document.getElementById(id);
+    function bindBtn(el, fn) {
       let handled = false;
       el.addEventListener('touchstart', (e) => {
         e.preventDefault();
@@ -255,12 +240,47 @@
       });
     }
 
-    // TUI navigation buttons
-    bindBtn('btn-up',    () => sendKey('\x1b[A'));   // Arrow Up
-    bindBtn('btn-down',  () => sendKey('\x1b[B'));   // Arrow Down
-    bindBtn('btn-tab',   () => sendKey('\t'));        // Tab
-    bindBtn('btn-enter', () => sendKey('\r'));        // Enter
-    bindBtn('btn-esc',   () => sendKey('\x1b'));      // Escape
+    // ── Dynamic shortcut buttons ──
+    const shortcutsGrid = document.getElementById('shortcuts-grid');
+
+    // Color map for special keys
+    function getButtonStyle(label) {
+      const l = label.toLowerCase();
+      if (l === 'tab') return 'bg-blue-700 hover:bg-blue-600';
+      if (l === 'enter' || l === 'enter/return') return 'bg-emerald-600 hover:bg-emerald-500';
+      if (l === 'esc' || l === 'escape') return 'bg-rose-700 hover:bg-rose-600';
+      return 'bg-gray-700 hover:bg-gray-600 border border-gray-600';
+    }
+
+    function renderShortcuts(shortcuts) {
+      shortcutsGrid.innerHTML = '';
+      // Adjust grid columns based on count
+      const cols = Math.min(shortcuts.length, 7);
+      shortcutsGrid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+      shortcuts.forEach(sc => {
+        const btn = document.createElement('button');
+        btn.className = `btn-quick ${getButtonStyle(sc.label)} text-white rounded-lg py-2.5 font-bold shadow-md text-sm`;
+        btn.textContent = sc.label;
+        btn.title = sc.title || sc.label;
+        bindBtn(btn, () => sendKey(sc.key));
+        shortcutsGrid.appendChild(btn);
+      });
+    }
+
+    // Fetch shortcuts from server
+    fetch(`/api/shortcuts?token=${authToken}`)
+      .then(r => r.json())
+      .then(shortcuts => renderShortcuts(shortcuts))
+      .catch(() => {
+        // Fallback defaults if fetch fails
+        renderShortcuts([
+          { label: '\u2191', key: '\x1b[A', title: 'Arrow Up' },
+          { label: '\u2193', key: '\x1b[B', title: 'Arrow Down' },
+          { label: 'Tab', key: '\t', title: 'Tab' },
+          { label: 'Enter', key: '\r', title: 'Enter' },
+          { label: 'Esc', key: '\x1b', title: 'Escape' },
+        ]);
+      });
 
     // ── Text input for prompts ──
     const form = document.getElementById('cmd-form');
@@ -320,6 +340,53 @@
         onViewportResize();
       }, 300);
     });
+
+    // ── Browser notifications ──
+    let notificationsEnabled = true;
+    const notifyToggle = document.getElementById('notify-toggle');
+    const notifyIcon = document.getElementById('notify-icon');
+
+    // Request permission on load
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    function updateNotifyIcon() {
+      if (notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+        notifyIcon.innerHTML = '&#128276;'; // bell
+        notifyToggle.classList.remove('text-gray-600');
+        notifyToggle.classList.add('text-yellow-400');
+      } else {
+        notifyIcon.innerHTML = '&#128277;'; // bell with slash
+        notifyToggle.classList.remove('text-yellow-400');
+        notifyToggle.classList.add('text-gray-600');
+      }
+    }
+
+    notifyToggle.addEventListener('click', () => {
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().then(updateNotifyIcon);
+      } else {
+        notificationsEnabled = !notificationsEnabled;
+        updateNotifyIcon();
+      }
+    });
+
+    socket.on('notify', (data) => {
+      if (!notificationsEnabled) return;
+      if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification(data.title, { body: data.body, icon: '&#129302;' });
+      } else if (!document.hidden) {
+        // Show subtle in-page toast when tab is focused
+        const toast = document.createElement('div');
+        toast.className = 'fixed top-2 right-2 bg-yellow-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg z-50 transition-opacity';
+        toast.textContent = data.title + ': ' + data.body;
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3000);
+      }
+    });
+
+    updateNotifyIcon();
   </script>
 </body>
 

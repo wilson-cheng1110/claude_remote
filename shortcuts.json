@@ -1,0 +1,9 @@
+[
+  { "label": "\u2191", "key": "\u001b[A", "title": "Arrow Up" },
+  { "label": "\u2193", "key": "\u001b[B", "title": "Arrow Down" },
+  { "label": "Tab", "key": "\t", "title": "Tab" },
+  { "label": "Enter", "key": "\r", "title": "Enter/Return" },
+  { "label": "Esc", "key": "\u001b", "title": "Escape" },
+  { "label": "Y", "key": "y", "title": "Yes" },
+  { "label": "N", "key": "n", "title": "No" }
+]

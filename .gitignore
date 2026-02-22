@@ -1,6 +1,7 @@
 node_modules/
 .tunnel-url
 .claude/
+.ssl/
 .env
 .env.*
 *.token

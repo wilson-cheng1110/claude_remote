@@ -27,7 +27,7 @@ describe('System: Package structure', () => {
   });
 
   test('package.json has all required dependencies', () => {
-    const requiredDeps = ['express', 'socket.io', 'node-pty', 'localtunnel', 'qrcode-terminal'];
+    const requiredDeps = ['express', 'socket.io', 'node-pty', 'localtunnel', 'qrcode-terminal', 'selfsigned'];
     for (const dep of requiredDeps) {
       expect(dep in pkg.dependencies).toBe(true);
     }
@@ -66,6 +66,26 @@ describe('System: File structure', () => {
     expect(fs.existsSync(path.join(root, 'lib', 'notifier.js'))).toBe(true);
   });
 
+  test('lib/ssl.js exists', () => {
+    expect(fs.existsSync(path.join(root, 'lib', 'ssl.js'))).toBe(true);
+  });
+
+  test('shortcuts.json exists', () => {
+    expect(fs.existsSync(path.join(root, 'shortcuts.json'))).toBe(true);
+  });
+
+  test('Dockerfile exists', () => {
+    expect(fs.existsSync(path.join(root, 'Dockerfile'))).toBe(true);
+  });
+
+  test('docker-compose.yml exists', () => {
+    expect(fs.existsSync(path.join(root, 'docker-compose.yml'))).toBe(true);
+  });
+
+  test('.dockerignore exists', () => {
+    expect(fs.existsSync(path.join(root, '.dockerignore'))).toBe(true);
+  });
+
   test('CLAUDE.md exists', () => {
     expect(fs.existsSync(path.join(root, 'CLAUDE.md'))).toBe(true);
   });
@@ -91,6 +111,23 @@ describe('System: Module loading', () => {
     const n = new Notifier({ fetchFn: jest.fn() });
     expect(n).toBeInstanceOf(Notifier);
     n.destroy();
+  });
+
+  test('lib/ssl.js exports getOrCreateCerts', () => {
+    const ssl = require('../lib/ssl');
+    expect(typeof ssl.getOrCreateCerts).toBe('function');
+  });
+
+  test('shortcuts.json is valid JSON array', () => {
+    const shortcuts = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'shortcuts.json'), 'utf-8'));
+    expect(Array.isArray(shortcuts)).toBe(true);
+    expect(shortcuts.length).toBeGreaterThan(0);
+    // Each shortcut has label, key, title
+    shortcuts.forEach(sc => {
+      expect(sc).toHaveProperty('label');
+      expect(sc).toHaveProperty('key');
+      expect(sc).toHaveProperty('title');
+    });
   });
 });
 
@@ -125,20 +162,14 @@ describe('System: index.html content', () => {
     expect(html).toContain('id="control-panel"');
   });
 
-  test('has TUI navigation buttons', () => {
-    expect(html).toContain('id="btn-up"');
-    expect(html).toContain('id="btn-down"');
-    expect(html).toContain('id="btn-tab"');
-    expect(html).toContain('id="btn-enter"');
-    expect(html).toContain('id="btn-esc"');
+  test('has dynamic shortcuts grid', () => {
+    expect(html).toContain('id="shortcuts-grid"');
+    expect(html).toContain('/api/shortcuts');
   });
 
-  test('sends correct key sequences for TUI navigation', () => {
-    expect(html).toContain("'\\x1b[A'");   // Arrow Up
-    expect(html).toContain("'\\x1b[B'");   // Arrow Down
-    expect(html).toContain("'\\t'");        // Tab
-    expect(html).toContain("'\\r'");        // Enter
-    expect(html).toContain("'\\x1b'");      // Escape
+  test('has notification toggle', () => {
+    expect(html).toContain('id="notify-toggle"');
+    expect(html).toContain('Notification');
   });
 
   test('has text input for prompts', () => {
@@ -210,6 +241,17 @@ describe('System: server.js content', () => {
     expect(serverContent).toContain('cloudflared');
   });
 
+  test('supports HTTPS with self-signed certs', () => {
+    expect(serverContent).toContain('CLAUDE_REMOTE_HTTPS');
+    expect(serverContent).toContain('getOrCreateCerts');
+    expect(serverContent).toContain('https.createServer');
+  });
+
+  test('has /api/shortcuts endpoint', () => {
+    expect(serverContent).toContain('/api/shortcuts');
+    expect(serverContent).toContain('shortcuts.json');
+  });
+
   test('parses cost data from output', () => {
     expect(serverContent).toContain('accumulator');
     expect(serverContent).toContain('status-update');
@@ -240,5 +282,10 @@ describe('System: Environment variable configuration', () => {
   test('CLAUDE_REMOTE_CMD is configurable', () => {
     const content = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf-8');
     expect(content).toContain('CLAUDE_REMOTE_CMD');
+  });
+
+  test('CLAUDE_REMOTE_HTTPS is configurable', () => {
+    const content = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf-8');
+    expect(content).toContain('CLAUDE_REMOTE_HTTPS');
   });
 });

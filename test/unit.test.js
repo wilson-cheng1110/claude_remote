@@ -284,16 +284,16 @@ describe('Notifier.sendImmediate', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  test('returns sent:false on HTTP error', async () => {
+  test('still returns sent:true on HTTP error (ntfy failure is non-fatal)', async () => {
     mockFetch.mockResolvedValue({ ok: false, statusText: 'Bad Request' });
     const result = await notifier.sendImmediate('Title', 'Body');
-    expect(result).toEqual({ sent: false, reason: 'Bad Request' });
+    expect(result).toEqual({ sent: true });
   });
 
-  test('returns sent:false on network error', async () => {
+  test('still returns sent:true on network error (ntfy failure is non-fatal)', async () => {
     mockFetch.mockRejectedValue(new Error('Network down'));
     const result = await notifier.sendImmediate('Title', 'Body');
-    expect(result).toEqual({ sent: false, reason: 'Network down' });
+    expect(result).toEqual({ sent: true });
   });
 
   test('passes custom priority and tags', async () => {
@@ -304,6 +304,57 @@ describe('Notifier.sendImmediate', () => {
         headers: expect.objectContaining({ Priority: 'high', Tags: 'warning' }),
       })
     );
+  });
+});
+
+// =============================================================================
+// Notifier – Socket.IO browser notifications
+// =============================================================================
+describe('Notifier with io (browser notifications)', () => {
+  let mockFetch;
+  let mockIo;
+
+  beforeEach(() => {
+    mockFetch = jest.fn().mockResolvedValue({ ok: true });
+    mockIo = { emit: jest.fn() };
+  });
+
+  test('emits notify event via io when sending', async () => {
+    const n = new Notifier({
+      topic: 'test',
+      io: mockIo,
+      fetchFn: mockFetch,
+      logger: jest.fn(),
+      errorLogger: jest.fn(),
+    });
+    await n.sendImmediate('Title', 'Body');
+    expect(mockIo.emit).toHaveBeenCalledWith('notify', {
+      title: 'Title',
+      body: 'Body',
+      priority: 'default',
+      tags: 'robot',
+    });
+    // Also sent to ntfy
+    expect(mockFetch).toHaveBeenCalled();
+  });
+
+  test('works with io only (no ntfy topic)', async () => {
+    const n = new Notifier({
+      io: mockIo,
+      fetchFn: mockFetch,
+      logger: jest.fn(),
+      errorLogger: jest.fn(),
+    });
+    const result = await n.sendImmediate('Title', 'Body');
+    expect(result).toEqual({ sent: true });
+    expect(mockIo.emit).toHaveBeenCalledWith('notify', expect.objectContaining({ title: 'Title' }));
+    // ntfy fetch should NOT be called (no topic)
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test('is enabled when only io is provided (no topic)', () => {
+    const n = new Notifier({ io: mockIo, fetchFn: jest.fn() });
+    expect(n._enabled).toBe(true);
   });
 });
 

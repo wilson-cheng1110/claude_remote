@@ -3,6 +3,7 @@
 
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const crypto = require('crypto');
 const { Server: SocketIO } = require('socket.io');
 const pty = require('node-pty');
@@ -14,6 +15,7 @@ const { execSync, spawn: cpSpawn } = require('child_process');
 
 const { stripAnsi, isPromptWaiting, isGenerationComplete, parseCostData, OutputAccumulator } = require('./lib/parser');
 const { Notifier } = require('./lib/notifier');
+const { getOrCreateCerts } = require('./lib/ssl');
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -21,6 +23,7 @@ const { Notifier } = require('./lib/notifier');
 const PREFERRED_PORT = parseInt(process.env.CLAUDE_REMOTE_PORT || process.env.PORT || '3000', 10);
 const SCROLLBACK_LIMIT = parseInt(process.env.CLAUDE_REMOTE_SCROLLBACK || '50000', 10);
 const DISABLE_TUNNEL = process.env.CLAUDE_REMOTE_NO_TUNNEL === '1';
+const ENABLE_HTTPS = process.env.CLAUDE_REMOTE_HTTPS !== '0';
 const CLAUDE_CMD = process.env.CLAUDE_REMOTE_CMD ||
   (os.platform() === 'win32' ? 'claude.cmd' : 'claude');
 const AUTH_TOKEN = process.env.CLAUDE_REMOTE_TOKEN || crypto.randomBytes(16).toString('hex');
@@ -41,15 +44,23 @@ function resolveNtfyTopic() {
 const NTFY_TOPIC = resolveNtfyTopic();
 
 // ---------------------------------------------------------------------------
-// Express + Socket.IO setup
+// Express app (created early so tests can reference it)
 // ---------------------------------------------------------------------------
 const app = express();
-const server = http.createServer(app);
-const io = new SocketIO(server, {
-  cors: { origin: '*' },
-  pingTimeout: 60000,
-  pingInterval: 25000,
-});
+
+// These are set during init() and exported
+let server;
+let io;
+let useHttps = false;
+let PROTOCOL = 'http';
+let ptyProcess;
+let scrollbackBuffer = '';
+let lastOutputTime = Date.now();
+let lastUserInputTime = Date.now();
+let waitingForInput = false;
+let shuttingDown = false;
+let notifier;
+const accumulator = new OutputAccumulator();
 
 // ---------------------------------------------------------------------------
 // Auth middleware – token must be in ?token= query param
@@ -82,23 +93,34 @@ app.get('/health', (_req, res) => {
     status: 'ok',
     uptime: process.uptime(),
     ptyAlive: ptyProcess && !ptyProcess.killed,
-    clients: io.engine ? io.engine.clientsCount : 0,
+    clients: io && io.engine ? io.engine.clientsCount : 0,
   });
 });
 
-// ---------------------------------------------------------------------------
-// Socket.IO auth – validate token on connection
-// ---------------------------------------------------------------------------
-io.use((socket, next) => {
-  const token = socket.handshake.auth?.token || socket.handshake.query?.token;
-  if (token === AUTH_TOKEN) {
-    return next();
+// Default shortcuts (fallback if shortcuts.json is missing)
+const DEFAULT_SHORTCUTS = [
+  { label: '\u2191', key: '\x1b[A', title: 'Arrow Up' },
+  { label: '\u2193', key: '\x1b[B', title: 'Arrow Down' },
+  { label: 'Tab', key: '\t', title: 'Tab' },
+  { label: 'Enter', key: '\r', title: 'Enter/Return' },
+  { label: 'Esc', key: '\x1b', title: 'Escape' },
+  { label: 'Y', key: 'y', title: 'Yes' },
+  { label: 'N', key: 'n', title: 'No' },
+];
+
+// Shortcuts API — reads shortcuts.json (behind auth via the global middleware)
+app.get('/api/shortcuts', (_req, res) => {
+  const shortcutsPath = path.join(__dirname, 'shortcuts.json');
+  try {
+    const data = fs.readFileSync(shortcutsPath, 'utf-8');
+    res.json(JSON.parse(data));
+  } catch {
+    res.json(DEFAULT_SHORTCUTS);
   }
-  next(new Error('Authentication failed'));
 });
 
 // ---------------------------------------------------------------------------
-// PTY Process – spawn claude with telemetry enabled, auto-restart on exit
+// PTY helpers
 // ---------------------------------------------------------------------------
 const ptyEnv = {
   ...process.env,
@@ -107,16 +129,6 @@ const ptyEnv = {
 };
 // Remove nesting guard so claude CLI can launch from within a Claude Code session
 delete ptyEnv.CLAUDECODE;
-
-let ptyProcess;
-let scrollbackBuffer = '';
-let lastOutputTime = Date.now();
-let lastUserInputTime = Date.now();
-let waitingForInput = false;
-let shuttingDown = false;
-
-const notifier = new Notifier({ topic: NTFY_TOPIC });
-const accumulator = new OutputAccumulator();
 
 function appendToScrollback(data) {
   scrollbackBuffer += data;
@@ -195,64 +207,6 @@ function spawnPty() {
   });
 }
 
-// Initial spawn
-spawnPty();
-
-// ---------------------------------------------------------------------------
-// Socket.IO connection handling
-// ---------------------------------------------------------------------------
-io.on('connection', (socket) => {
-  console.log(`[claude-remote] Client connected (id=${socket.id})`);
-
-  // Send scrollback buffer so the client sees recent history
-  if (scrollbackBuffer.length > 0) {
-    socket.emit('output', scrollbackBuffer);
-  }
-
-  // Send last known cost data
-  const lastCost = accumulator.getLastCostData();
-  if (lastCost) {
-    socket.emit('status-update', lastCost);
-  }
-
-  // Pipe user input from socket to pty (blocked in readonly mode)
-  socket.on('input', (data) => {
-    if (READONLY) {
-      socket.emit('output', '\r\n\x1b[31m--- Read-only mode: input disabled ---\x1b[0m\r\n');
-      return;
-    }
-    lastUserInputTime = Date.now();
-    waitingForInput = false;
-    notifier.cancelPending();
-    if (ptyProcess && !ptyProcess.killed) {
-      ptyProcess.write(data);
-    }
-  });
-
-  // Handle terminal resize
-  socket.on('resize', (size) => {
-    if (size && size.cols && size.rows && ptyProcess && !ptyProcess.killed) {
-      try {
-        ptyProcess.resize(Math.max(1, size.cols), Math.max(1, size.rows));
-      } catch (e) {
-        // Resize can fail if pty is closing
-      }
-    }
-  });
-
-  // Client requests a cost refresh
-  socket.on('request-status', () => {
-    const lastCost = accumulator.getLastCostData();
-    if (lastCost) {
-      socket.emit('status-update', lastCost);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    console.log(`[claude-remote] Client disconnected (id=${socket.id})`);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Tunnel helpers
 // ---------------------------------------------------------------------------
@@ -265,7 +219,6 @@ function findCloudflared() {
 
   // Check common winget install location on Windows
   if (os.platform() === 'win32') {
-    const glob = require('path');
     const wingetBase = path.join(os.homedir(), 'AppData', 'Local', 'Microsoft', 'WinGet', 'Packages');
     try {
       const dirs = fs.readdirSync(wingetBase).filter(d => d.toLowerCase().includes('cloudflare'));
@@ -332,6 +285,103 @@ async function startTunnel(port) {
 }
 
 // ---------------------------------------------------------------------------
+// Init – async setup for HTTPS certs, then start everything
+// ---------------------------------------------------------------------------
+async function init() {
+  // Generate or load SSL certs
+  if (ENABLE_HTTPS) {
+    const sslCerts = await getOrCreateCerts();
+    if (sslCerts) {
+      useHttps = true;
+      PROTOCOL = 'https';
+      server = https.createServer({ cert: sslCerts.cert, key: sslCerts.key }, app);
+    } else {
+      console.log('[claude-remote] Could not generate SSL certs, falling back to HTTP');
+      server = http.createServer(app);
+    }
+  } else {
+    server = http.createServer(app);
+  }
+
+  io = new SocketIO(server, {
+    cors: { origin: '*' },
+    pingTimeout: 60000,
+    pingInterval: 25000,
+  });
+
+  // Socket.IO auth – validate token on connection
+  io.use((socket, next) => {
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    if (token === AUTH_TOKEN) {
+      return next();
+    }
+    next(new Error('Authentication failed'));
+  });
+
+  // Create notifier with io for browser notifications
+  notifier = new Notifier({ topic: NTFY_TOPIC, io });
+
+  // Spawn PTY
+  spawnPty();
+
+  // Socket.IO connection handling
+  io.on('connection', (socket) => {
+    console.log(`[claude-remote] Client connected (id=${socket.id})`);
+
+    // Send scrollback buffer so the client sees recent history
+    if (scrollbackBuffer.length > 0) {
+      socket.emit('output', scrollbackBuffer);
+    }
+
+    // Send last known cost data
+    const lastCost = accumulator.getLastCostData();
+    if (lastCost) {
+      socket.emit('status-update', lastCost);
+    }
+
+    // Pipe user input from socket to pty (blocked in readonly mode)
+    socket.on('input', (data) => {
+      if (READONLY) {
+        socket.emit('output', '\r\n\x1b[31m--- Read-only mode: input disabled ---\x1b[0m\r\n');
+        return;
+      }
+      lastUserInputTime = Date.now();
+      waitingForInput = false;
+      notifier.cancelPending();
+      if (ptyProcess && !ptyProcess.killed) {
+        ptyProcess.write(data);
+      }
+    });
+
+    // Handle terminal resize
+    socket.on('resize', (size) => {
+      if (size && size.cols && size.rows && ptyProcess && !ptyProcess.killed) {
+        try {
+          ptyProcess.resize(Math.max(1, size.cols), Math.max(1, size.rows));
+        } catch (e) {
+          // Resize can fail if pty is closing
+        }
+      }
+    });
+
+    // Client requests a cost refresh
+    socket.on('request-status', () => {
+      const lastCost = accumulator.getLastCostData();
+      if (lastCost) {
+        socket.emit('status-update', lastCost);
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log(`[claude-remote] Client disconnected (id=${socket.id})`);
+    });
+  });
+
+  // Start server
+  await startServer(PREFERRED_PORT);
+}
+
+// ---------------------------------------------------------------------------
 // Start server – try preferred port, auto-select if busy
 // ---------------------------------------------------------------------------
 async function startServer(port) {
@@ -347,14 +397,15 @@ async function startServer(port) {
     server.listen(port, () => resolve(port));
   });
 
-  console.log(`[claude-remote] Server listening on http://localhost:${actualPort}`);
+  console.log(`[claude-remote] Server listening on ${PROTOCOL}://localhost:${actualPort}`);
   console.log(`[claude-remote] Auth token: ${AUTH_TOKEN}`);
+  console.log(`[claude-remote] HTTPS: ${useHttps ? 'enabled (self-signed)' : 'disabled'}`);
   console.log(`[claude-remote] Telemetry: CLAUDE_CODE_ENABLE_TELEMETRY=1`);
-  console.log(`[claude-remote] Notifications: ntfy.sh/${NTFY_TOPIC}`);
+  console.log(`[claude-remote] Notifications: ntfy.sh/${NTFY_TOPIC} + browser`);
   if (READONLY) console.log(`[claude-remote] READ-ONLY mode — input disabled`);
 
   if (DISABLE_TUNNEL) {
-    const localUrl = `http://localhost:${actualPort}?token=${AUTH_TOKEN}`;
+    const localUrl = `${PROTOCOL}://localhost:${actualPort}?token=${AUTH_TOKEN}`;
     console.log(`[claude-remote] Tunnel disabled. Local URL: ${localUrl}`);
     qrcode.generate(localUrl, { small: true }, (qr) => { console.log(qr); });
     return;
@@ -394,12 +445,15 @@ async function startServer(port) {
     }
   } catch (err) {
     console.error('[claude-remote] Failed to create tunnel:', err.message);
-    const localUrl = `http://localhost:${actualPort}?token=${AUTH_TOKEN}`;
+    const localUrl = `${PROTOCOL}://localhost:${actualPort}?token=${AUTH_TOKEN}`;
     console.log(`[claude-remote] Access locally: ${localUrl}`);
   }
 }
 
-startServer(PREFERRED_PORT);
+// ---------------------------------------------------------------------------
+// Launch
+// ---------------------------------------------------------------------------
+init();
 
 // ---------------------------------------------------------------------------
 // Graceful shutdown
@@ -407,7 +461,7 @@ startServer(PREFERRED_PORT);
 function shutdown(signal) {
   console.log(`\n[claude-remote] Received ${signal}, shutting down...`);
   shuttingDown = true;
-  notifier.destroy();
+  if (notifier) notifier.destroy();
   if (ptyProcess && !ptyProcess.killed) {
     ptyProcess.kill();
   }
@@ -415,10 +469,12 @@ function shutdown(signal) {
   // Clean up runtime files (keep .ntfy-topic for persistence)
   try { fs.unlinkSync(path.join(__dirname, '.tunnel-url')); } catch {}
 
-  server.close(() => {
-    console.log('[claude-remote] Server closed.');
-    process.exit(0);
-  });
+  if (server) {
+    server.close(() => {
+      console.log('[claude-remote] Server closed.');
+      process.exit(0);
+    });
+  }
 
   setTimeout(() => {
     console.log('[claude-remote] Forcing exit.');
@@ -434,14 +490,15 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 // ---------------------------------------------------------------------------
 module.exports = {
   app,
-  server,
-  io,
-  ptyProcess,
-  notifier,
+  get server() { return server; },
+  get io() { return io; },
+  get ptyProcess() { return ptyProcess; },
+  get notifier() { return notifier; },
   accumulator,
   scrollbackBuffer: () => scrollbackBuffer,
   appendToScrollback,
   shutdown,
+  init,
   PREFERRED_PORT,
   AUTH_TOKEN,
 };

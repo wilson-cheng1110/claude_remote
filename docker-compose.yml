@@ -1,0 +1,11 @@
+services:
+  claude-remote:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - CLAUDE_REMOTE_NO_TUNNEL=1
+      - CLAUDE_REMOTE_PORT=3000
+      - CLAUDE_REMOTE_HTTPS=1
+    volumes:
+      - ./.ssl:/app/.ssl
