@@ -1,5 +1,5 @@
 # Claude Remote
-
+Available with ALL Claude plan from Claude Code including both Pro Plan and Max Plan
 Remote control Claude Code from your phone. Start a task on your laptop, walk away, and monitor progress from anywhere.
 
 ```
